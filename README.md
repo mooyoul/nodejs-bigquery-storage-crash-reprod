@@ -4,6 +4,8 @@
 
 This repository is a minimal reproduction of a crash of using BigQuery Storage API with Node.js.
 
+Issue: https://github.com/googleapis/nodejs-bigquery-storage/issues/592
+
 
 # Prerequisites
 
@@ -28,7 +30,7 @@ $ gcloud auth application-default login
 Run below SQL to create a BigQuery dataset and a table for testing.
 Replace `YOUR_PROJECT_ID` with your actual Google Cloud project ID.
 
-```bigquery
+```sql
 CREATE SCHEMA `YOUR_PROJECT_ID.example_dataset`;
 
 CREATE TABLE `YOUR_PROJECT_ID.example_dataset.example_table`

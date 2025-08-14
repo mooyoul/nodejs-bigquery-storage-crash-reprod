@@ -1,0 +1,25 @@
+{
+  "name": "nodejs-bigquery-storage-crash-reprod",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mooyoul/nodejs-bigquery-storage-crash-reprod.git"
+  },
+  "author": "MooYeol Prescott Lee <mooyoul@gmail.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/mooyoul/nodejs-bigquery-storage-crash-reprod/issues"
+  },
+  "homepage": "https://github.com/mooyoul/nodejs-bigquery-storage-crash-reprod#readme",
+  "description": "",
+  "dependencies": {
+    "@google-cloud/bigquery-storage": "^5.1.0",
+    "debug": "^4.4.1",
+    "google-auth-library": "^10.2.1"
+  }
+}

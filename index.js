@@ -1,9 +1,25 @@
 import { managedwriter, protos, adapt } from "@google-cloud/bigquery-storage";
+import { randomUUID } from "node:crypto";
+import { setTimeout } from "node:timers/promises";
 import { GoogleAuth } from "google-auth-library";
 import debug from "debug";
 
 const log = debug("nodejs-bigquery-storage-crash-reprod");
 log.enabled = true; // always print debug logs
+
+managedwriter.setLogFunction((() => {
+  const instance = debug("@google-cloud/bigquery-storage");
+  instance.enabled = true;
+
+  return instance;
+})());
+
+const originalExit = process.exit;
+process.exit = (code) => {
+  log("process.exit called with code:", code);
+  log("stack:", new Error().stack);
+  return originalExit.call(process, code);
+}
 
 (async function main() {
   // The ID of the Project that contains given BigQuery dataset.
@@ -22,6 +38,9 @@ log.enabled = true; // always print debug logs
   const writerClient = new managedwriter.WriterClient({
     projectId: PROJECT_ID,
     authClient,
+    "grpc.keepalive_permit_without_calls": 1,
+    "grpc.max_connection_age_ms": 60 * 5 * 1000, // 5 minutes
+    "grpc.max_connection_idle_ms": 60 * 5 * 1000, // 5 minutes
   });
 
   // Activate write retries
@@ -45,6 +64,58 @@ log.enabled = true; // always print debug logs
   const connection = await writerClient.createStreamConnection({
     streamId: STREAM_ID,
   });
+  connection.on("error", (err) => {
+    log("!!! [error] Connection error:", err);
+
+    {
+      log("writing some data to the stream right after receiving error event...");
+      testWrite({ type: "write_after_error" }).finally(() => {
+        log("attempted to write data to the stream after error event");
+      });
+
+
+      (async () => {
+        await setTimeout(5000);
+        log("writing some data to the stream after 5 seconds...");
+        await testWrite({ type: "write_5sec_after_error" });
+      })().finally(() => {
+        log("attempted to write data to the stream after 5 seconds");
+      })
+    }
+
+    async function testWrite(additionalProps = {}) {
+      log("testWrite - process.getActiveResourcesInfo: ", process.getActiveResourcesInfo());
+
+      try {
+        log("attempting to write data to the stream...");
+        const res = await jsonWriter.appendRows([ {
+          event_id: randomUUID(),
+          event_timestamp: new Date(),
+          payload: JSON.stringify({
+            foo: "bar",
+            bar: true,
+            baz: 123,
+            qux: [ 1, 2, 3 ],
+            now: Date.now(),
+            ...additionalProps,
+          }),
+        } ]).getResult();
+
+        log("appended rows to the stream successfully: ", res);
+      } catch (e) {
+        log("Error while writing to the stream:", e);
+      }
+    }
+  });
+  log("attached error event listener to connection");
+
+  ["reconnect", "close", "pause", "resume", "schemaUpdated", "end"].forEach((eventName) => {
+    connection.on(eventName, (...args) => {
+      log("stream_connection triggered [%s]", eventName, ...args);
+    });
+
+    log("attached %s event listener to connection", eventName);
+  });
 
   // Create a JSON writer instance
   const jsonWriter = new managedwriter.JSONWriter({
@@ -62,7 +133,12 @@ log.enabled = true; // always print debug logs
   // Close the connection and writer client if shutdown signal is received
   writerClient.close();
 
-  log("closed client. exiting");
+  log("closed client. process is about to exit!");
+  log("process active resources (event loop): ", process.getActiveResourcesInfo());
+
+  log("delaying process exit 5 seconds to allow for any pending operations to complete...");
+  await setTimeout(5000);
+  log("exiting now.");
 })().catch((e) => {
   log("Error in main function:", e.stack);
   process.exit(1);
@@ -86,12 +162,12 @@ async function getADCClient() {
 }
 
 // Wait for shutdown signal (SIGINT or SIGTERM)
-async function waitForShutdownSignal() {
-  const signals = ["SIGINT", "SIGTERM"];
-
+async function waitForShutdownSignal(signals) {
   const { signal, cleanup } = await new Promise((resolve) => {
     const signalHandler = (signal) => {
       log("received signal %s", signal);
+      log("stack: ", new Error(signal).stack);
+
       resolve({
         signal,
         cleanup,
